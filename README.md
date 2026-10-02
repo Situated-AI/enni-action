@@ -13,8 +13,13 @@ Ask [Enni](https://enni.vibana.com) whether a ticket, change or document is read
 
 ## Setup
 
-1. In Enni, an admin of your space makes a **CI token** (*Settings → Tools → GitHub Actions*). It can run readiness checks and nothing else, for that space only, and is shown once.
-2. Save it as a repository secret, e.g. `ENNI_CI_TOKEN`.
+1. **Make a CI token in Enni** (an admin of your space):
+   1. In the sidebar, under **Settings**, open **Let a tool ask Enni**.
+   2. Pick the **GitHub Actions** chip.
+   3. Press **Make a CI token**, then **Copy**.
+
+   The token can run readiness checks and nothing else, for that space only. **It is shown once** — if you lose it, make another.
+2. **Save it in GitHub**: your repository → **Settings → Secrets and variables → Actions → New repository secret**, named `ENNI_CI_TOKEN`.
 3. Add the step above. Pin `@v1`: fixes reach you without editing the workflow.
 
 ## Inputs
