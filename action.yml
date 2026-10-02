@@ -1,0 +1,57 @@
+# Enni's readiness gate (#105, D-54, D-179) — published and versioned, never vendored: a release
+# fixes every installation, the thing v1's copied directories could never have done.
+name: Enni readiness gate
+description: Ask Enni whether a subject is ready, and fail the job unless it is. Branches on `ok`, never on HTTP status.
+inputs:
+  enni-url:
+    description: Your Enni origin, e.g. https://enni.example.com
+    required: true
+  token:
+    description: A CI token an admin made in Enni (check_readiness only). Store it as a secret.
+    required: true
+  subject-url:
+    description: The link to judge — a ticket, a change, a document.
+    required: true
+  intent:
+    description: What it must be ready for (implement, review, deploy, approve, publish). Unknown values are ignored, never refused.
+    required: false
+    default: ""
+  wait-ms:
+    description: How long Enni waits server-side for a running check, per attempt (max 25000).
+    required: false
+    default: "20000"
+  attempts:
+    description: How many times to ask. Re-asking joins the same check; it never starts a second.
+    required: false
+    default: "6"
+  fail-on-not-ready:
+    description: Fail the job when the answer is not ok. Set "false" to only report.
+    required: false
+    default: "true"
+outputs:
+  ok:
+    description: '"true" when the subject is ready for the intent.'
+    value: ${{ steps.gate.outputs.ok }}
+  verdict:
+    description: Enni's verdict.
+    value: ${{ steps.gate.outputs.verdict }}
+  brief-url:
+    description: Where the brief behind the verdict lives.
+    value: ${{ steps.gate.outputs.brief-url }}
+  receipt:
+    description: The signed receipt a later step can verify at /api/gate/verify.
+    value: ${{ steps.gate.outputs.receipt }}
+runs:
+  using: composite
+  steps:
+    - id: gate
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/gate.sh"
+      env:
+        ENNI_URL: ${{ inputs.enni-url }}
+        ENNI_TOKEN: ${{ inputs.token }}
+        ENNI_SUBJECT_URL: ${{ inputs.subject-url }}
+        ENNI_INTENT: ${{ inputs.intent }}
+        ENNI_WAIT_MS: ${{ inputs.wait-ms }}
+        ENNI_ATTEMPTS: ${{ inputs.attempts }}
+        ENNI_FAIL_ON_NOT_READY: ${{ inputs.fail-on-not-ready }}
