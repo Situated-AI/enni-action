@@ -1,5 +1,5 @@
-# Enni's readiness gate (#105, D-54, D-179) — published and versioned, never vendored: a release
-# fixes every installation, the thing v1's copied directories could never have done.
+# Enni readiness gate — a published, versioned action. Pin it by tag (`@v1`); a new release reaches
+# every workflow that pins the major version, without anyone copying a directory.
 name: Enni readiness gate
 description: Ask Enni whether a subject is ready, and fail the job unless it is. Branches on `ok`, never on HTTP status.
 inputs:

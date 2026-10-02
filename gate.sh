@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# The gate's loop (#105, api-contract.md Tier 1 §3): call check_readiness over MCP, and while the
-# answer is pending, wait retry_after_ms and ask again — which joins the same run, so six attempts
-# are never six generations (#77).
+# The gate's loop: call check_readiness over MCP, and while the answer is pending, wait
+# retry_after_ms and ask again — which joins the same check, so six attempts are never six checks.
 #
-# Deliberately NOT `curl --fail-with-body`: "a refused receipt answers 200 with ok=false, and a curl
-# that treats HTTP status as the verdict would report a server problem as a passing gate the day that
-# changes." The verdict is `ok` in the body. A body with no answer in it is a failure, whatever the
-# status code says.
+# Deliberately NOT `curl --fail-with-body`: a refused answer arrives as 200 with ok=false, and a curl
+# that treated the HTTP status as the verdict would report a server problem as a passing gate the
+# day that changed. The verdict is `ok` in the body. A body with no answer in it is a failure,
+# whatever the status code says.
 set -uo pipefail
 
 url="${ENNI_URL%/}/api/mcp"
