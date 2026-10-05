@@ -5,7 +5,6 @@ Ask [Enni](https://enni.vibana.com) whether a ticket, change or document is read
 ```yaml
 - uses: situated-ai/enni-action@v1
   with:
-    enni-url: https://your-enni.example.com
     token: ${{ secrets.ENNI_CI_TOKEN }}
     subject-url: ${{ github.event.pull_request.html_url }}
     intent: review
@@ -26,7 +25,7 @@ Ask [Enni](https://enni.vibana.com) whether a ticket, change or document is read
 
 | Input | Required | Default | |
 |---|---|---|---|
-| `enni-url` | yes | | Your Enni origin |
+| `enni-url` | no | `https://enni.vibana.com` | The Enni origin to ask |
 | `token` | yes | | A CI token (`check_readiness` only) |
 | `subject-url` | yes | | The link to judge |
 | `intent` | no | | `implement`, `review`, `deploy`, `approve` or `publish`. An unknown value is ignored, never refused |
