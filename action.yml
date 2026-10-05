@@ -4,8 +4,9 @@ name: Enni readiness gate
 description: Ask Enni whether a subject is ready, and fail the job unless it is. Branches on `ok`, never on HTTP status.
 inputs:
   enni-url:
-    description: Your Enni origin, e.g. https://enni.example.com
-    required: true
+    description: The Enni origin to ask. Enni's own unless you run another.
+    required: false
+    default: https://enni.vibana.com
   token:
     description: A CI token an admin made in Enni (check_readiness only). Store it as a secret.
     required: true
