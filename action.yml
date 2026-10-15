@@ -56,3 +56,6 @@ runs:
         ENNI_WAIT_MS: ${{ inputs.wait-ms }}
         ENNI_ATTEMPTS: ${{ inputs.attempts }}
         ENNI_FAIL_ON_NOT_READY: ${{ inputs.fail-on-not-ready }}
+branding:
+  icon: check-circle
+  color: purple

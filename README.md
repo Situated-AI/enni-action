@@ -2,13 +2,27 @@
 
 Ask [Enni](https://enni.vibana.com) whether a ticket, change or document is ready — and fail the job unless it is.
 
+Check every pull request before review. Save this as `.github/workflows/enni.yml`:
+
 ```yaml
-- uses: situated-ai/enni-action@v1
-  with:
-    token: ${{ secrets.ENNI_CI_TOKEN }}
-    subject-url: ${{ github.event.pull_request.html_url }}
-    intent: review
+name: Enni readiness
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: situated-ai/enni-action@v1
+        with:
+          token: ${{ secrets.ENNI_CI_TOKEN }}
+          subject-url: ${{ github.event.pull_request.html_url }}
+          intent: review
 ```
+
+The job fails until Enni says the work behind the pull request is ready, so reviewers see the gap before they read the diff. **Read-only:** it never comments, labels or merges. Free while Enni is in beta, and a free tier stays after.
+
+No Enni account yet? [Create one](https://enni.vibana.com/sign-up?ref=action), then follow Setup.
 
 ## Setup
 
@@ -46,3 +60,7 @@ The job passes only when Enni's answer says `ok: true`. **It never reads the HTT
 ```sh
 bun test   # runs gate.sh against a scripted server; needs bash, curl and jq
 ```
+
+## License
+
+[MIT](LICENSE)
