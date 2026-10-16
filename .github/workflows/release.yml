@@ -1,0 +1,41 @@
+# Release the action when a version tag is pushed (`git tag v1.2.1 && git push origin v1.2.1`):
+# create the GitHub release with generated notes, and move the major tag (`v1`) to the same commit,
+# so every workflow pinned to `@v1` gets the fix without editing anything.
+#
+# GitHub does not publish a release to the Marketplace from a workflow or the API — only the
+# "Publish this Action to the GitHub Marketplace" checkbox on the release page does. The action
+# itself reaches everyone through `@v1` either way; tick the box on a release now and then to
+# refresh the Marketplace listing's version.
+name: release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - name: Test before releasing
+        run: bun test
+      - name: Create the release and move the major tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          major="${TAG%%.*}"
+          gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -fa "$major" -m "$major -> $TAG" "$TAG^{commit}"
+          git push -f origin "$major"
+          echo "Released $TAG; $major now points to it." >> "$GITHUB_STEP_SUMMARY"
