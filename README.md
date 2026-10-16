@@ -59,6 +59,10 @@ Each run writes Enni's verdict to the job's summary page, with the three things 
 
 The job passes only when Enni's answer says `ok: true`. **It never reads the HTTP status as the verdict**: a server error, a refusal, or a body without an answer fails the job — a problem on Enni's side is never a passing gate.
 
+## Releasing
+
+Push a version tag (`git tag v1.2.1 && git push origin v1.2.1`). The `release` workflow runs the tests, creates the GitHub release with generated notes and moves `v1` to it, so everyone pinned to `@v1` gets it. GitHub only publishes to the Marketplace from the release page's checkbox; tick it now and then to refresh the listing.
+
 ## Development
 
 ```sh
