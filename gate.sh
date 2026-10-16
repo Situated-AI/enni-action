@@ -26,6 +26,25 @@ ask() {
     --data "$(request)"
 }
 
+# The job's summary page: the verdict, the top three things to change, and the paste-ready rewrite
+# (Enni contract v9, enni-v2 #647). Every field is optional, so an older answer prints what it has.
+# Quotes and recommendations arrive wrapped as untrusted excerpts; the tags are dropped for reading.
+write_summary() {
+  [[ -n "${GITHUB_STEP_SUMMARY:-}" ]] || return 0
+  jq -r '
+    def plain: tostring | gsub("<untrusted-excerpt[^>]*>|</untrusted-excerpt>"; "");
+    "## Enni: \(.verdict // "no verdict")\n\n\(.summary // "" | plain)\n",
+    (if ((.answer.why // []) | length) > 0 then
+      "### What to change first\n",
+      ((.answer.why // [])[:3] | to_entries[] | "\(.key + 1). \((.value.recommendation // .value.reason // "") | plain)"),
+      "" else empty end),
+    (if .answer.rewrite.markdown then
+      "<details><summary>Suggested rewrite (paste into the issue)</summary>\n\n```markdown\n\(.answer.rewrite.markdown | plain)\n```\n</details>\n"
+      else empty end),
+    (if .brief_url then "[The full answer](\(.brief_url))" else empty end)
+  ' <<<"$1" >>"$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+}
+
 for ((attempt = 1; attempt <= attempts; attempt++)); do
   body="$(ask)" || { echo "::error::Enni did not answer (attempt $attempt)."; exit 1; }
   answer="$(jq -c '.result.structuredContent // empty' <<<"$body" 2>/dev/null)"
@@ -49,6 +68,7 @@ for ((attempt = 1; attempt <= attempts; attempt++)); do
     echo "receipt=$(jq -r '.receipt // ""' <<<"$answer")"
   } >>"$out"
   echo "Enni: $(jq -r '.verdict' <<<"$answer") — $(jq -r '.summary' <<<"$answer")"
+  write_summary "$answer"
   if [[ "$ok" != "true" && "${ENNI_FAIL_ON_NOT_READY:-true}" == "true" ]]; then
     echo "::error::Not ready: $(jq -r '.summary' <<<"$answer")"
     exit 1
