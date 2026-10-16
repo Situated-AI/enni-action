@@ -47,6 +47,10 @@ No Enni account yet? [Create one](https://enni.vibana.com/sign-up?ref=action), t
 | `attempts` | no | `6` | How many times to ask. Asking again joins the same check — it never starts a second |
 | `fail-on-not-ready` | no | `true` | Set `false` to report without failing |
 
+## The job's summary
+
+Each run writes Enni's verdict to the job's summary page, with the three things to change first and a suggested rewrite of the issue's missing sections (acceptance criteria, steps, expected and actual) you can paste back into the issue.
+
 ## Outputs
 
 `ok` (`"true"` when ready), `verdict`, `brief-url`, and `receipt` — a signed receipt a later step can verify at `<enni-url>/api/gate/verify`.

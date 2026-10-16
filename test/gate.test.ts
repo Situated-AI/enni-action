@@ -133,3 +133,48 @@ describe("the gate's loop", () => {
     expect(readFileSync(GATE, "utf8").replace(/^#.*$/gm, "")).not.toContain("--fail");
   });
 });
+
+describe("the job's summary page (Enni contract v9)", () => {
+  const summaryFile = () => join(mkdtempSync(join(tmpdir(), "gate-sum-")), "summary.md");
+
+  test("the verdict, the top three changes and the rewrite, with the untrusted tags dropped", async () => {
+    const wrap = (text: string) => `<untrusted-excerpt source="github" url="u">${text}</untrusted-excerpt>`;
+    serve([
+      answer({
+        status: "complete",
+        ok: false,
+        verdict: "not-ready",
+        summary: "An open PR already works on this.",
+        brief_url: "/briefs/b2",
+        answer: {
+          why: [
+            { reason: "r", recommendation: wrap("Review or help with acme/web#12 instead.") },
+            { reason: "Add acceptance criteria." },
+            { reason: "r3", recommendation: "Name the files." },
+            { reason: "r4", recommendation: "Not shown." },
+          ],
+          rewrite: { markdown: wrap("## Acceptance criteria\n- [ ] Proposed: x") },
+        },
+      }),
+    ]);
+    const file = summaryFile();
+    await runGate({ GITHUB_STEP_SUMMARY: file, ENNI_FAIL_ON_NOT_READY: "false" });
+    const md = readFileSync(file, "utf8");
+    expect(md).toContain("## Enni: not-ready");
+    expect(md).toContain("1. Review or help with acme/web#12 instead.");
+    expect(md).toContain("2. Add acceptance criteria.");
+    expect(md).toContain("3. Name the files.");
+    expect(md).not.toContain("Not shown.");
+    expect(md).toContain("## Acceptance criteria\n- [ ] Proposed: x");
+    expect(md).not.toContain("untrusted-excerpt");
+  });
+
+  test("an older answer without why or rewrite still prints its verdict", async () => {
+    serve([READY]);
+    const file = summaryFile();
+    expect((await runGate({ GITHUB_STEP_SUMMARY: file })).code).toBe(0);
+    const md = readFileSync(file, "utf8");
+    expect(md).toContain("## Enni: ready");
+    expect(md).not.toContain("What to change first");
+  });
+});
