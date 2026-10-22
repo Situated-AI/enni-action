@@ -7,8 +7,9 @@
 # day that changed. The verdict is `ok` in the body. A body with no answer in it is a failure,
 # whatever the status code says.
 #
-# With no token, the gate asks Enni's public check instead: one GET, no account, public GitHub
+# With `token: public`, the gate asks Enni's public check instead: one GET, no account, public GitHub
 # issues and pull requests only, the rules' answer (no pending, so no loop). See `public_check`.
+# An empty token is not the public check: a missing secret goes to MCP as before, and fails.
 set -uo pipefail
 
 url="${ENNI_URL%/}/api/mcp"
@@ -48,19 +49,19 @@ write_summary() {
   ' <<<"$1" >>"$GITHUB_STEP_SUMMARY" 2>/dev/null || true
 }
 
-# Value first: what an account adds, and where to get one. Printed on every tokenless run.
+# Value first: what an account adds, and where to get one. Printed on every public-mode run.
 upgrade_line() {
   local line="Checked without an account: the public rules only. With an Enni space it also checks private repos and learns your team: ${ENNI_URL%/}/get-started?ref=action"
   echo "$line"
   [[ -z "${GITHUB_STEP_SUMMARY:-}" ]] || printf '\n%s\n' "$line" >>"$GITHUB_STEP_SUMMARY"
 }
 
-# The tokenless path: `GET /api/public/check` (the same rubric, public GitHub only, nothing stored).
+# The public path: `GET /api/public/check` (the same rubric, public GitHub only, nothing stored).
 # Its answer has no `ok`; it is `verdict == "ready"`, exactly as Enni derives `ok` for a token.
-# A refusal is problem+json with a `code`. Enni being busy, or the item not being public, is not
-# an answer about the item: the job says so and does not fail as "not ready". Anything else — a
-# link Enni cannot read, a server problem, a body with no answer — fails, as on the token path.
+# A refusal is problem+json with a `code`. Every refusal fails the job, as on the token path: Enni
+# being busy, or the link not being public, is a problem on Enni's side, never a passing gate.
 public_check() {
+  trap upgrade_line EXIT
   local query=(--data-urlencode "url=$ENNI_SUBJECT_URL")
   # The public check refuses an unknown intent; the action promises to ignore one.
   case "${ENNI_INTENT:-}" in
@@ -78,18 +79,14 @@ public_check() {
     detail="$(jq -r '.detail // empty' <<<"$body" 2>/dev/null)"
     case "$code" in
       rate_limited)
-        echo "::warning::Enni's public check is busy, so this run has no answer: ${detail:-try again in a few minutes}. Not failing the job for it."
-        upgrade_line
-        exit 0
+        echo "::error::Enni's public check is busy, so this run has no answer: try again in a few minutes.${detail:+ ($detail)}"
         ;;
       forbidden | not_found)
         # GitHub shows a private repository to a stranger as not found, so both mean the same here.
-        echo "::warning::Enni's public check can't read that link: ${detail:-it is not a public issue or pull request}. Not failing the job for it; a token checks private repos."
-        upgrade_line
-        exit 0
+        echo "::error::Enni's public check can't read that link: it isn't a public issue or pull request.${detail:+ ($detail)} For a private repo, use a token."
         ;;
+      *) echo "::error::Enni refused: ${detail:-$body}" ;;
     esac
-    echo "::error::Enni refused: ${detail:-$body}"
     exit 1
   fi
   local ok summary
@@ -103,7 +100,6 @@ public_check() {
   } >>"$out"
   echo "Enni: $verdict — $summary"
   write_summary "$(jq -c '{verdict, summary: .answer.sentence, answer}' <<<"$body")"
-  upgrade_line
   if [[ "$ok" != "true" && "${ENNI_FAIL_ON_NOT_READY:-true}" == "true" ]]; then
     echo "::error::Not ready: $(jq -r '[.answer.why[]?.text][0] // .answer.sentence // ""' <<<"$body")"
     exit 1
@@ -111,7 +107,7 @@ public_check() {
   exit 0
 }
 
-[[ -n "${ENNI_TOKEN:-}" ]] || public_check
+[[ "${ENNI_TOKEN:-}" != "public" ]] || public_check
 
 for ((attempt = 1; attempt <= attempts; attempt++)); do
   body="$(ask)" || { echo "::error::Enni did not answer (attempt $attempt)."; exit 1; }

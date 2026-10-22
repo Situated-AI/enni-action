@@ -17,15 +17,16 @@ jobs:
     steps:
       - uses: situated-ai/enni-action@v1
         with:
+          token: public
           subject-url: ${{ github.event.issue.html_url }}
           intent: implement
 ```
 
-No token, no signup: without one the action asks Enni's public check, which runs the same rules over any public GitHub issue or pull request and stores nothing. The job fails until the issue is ready, and its summary page shows what to change first. **Read-only:** it never comments, labels or merges.
+No signup: `token: public` asks Enni's public check, which runs the same rules over any public GitHub issue or pull request and stores nothing. The job fails until the issue is ready, and its summary page shows what to change first. **Read-only:** it never comments, labels or merges.
 
-Two answers are not about the issue, so they never fail the job: the public check being busy (it is rate-limited — try again in a few minutes), and a link it can't read publicly (a private repository). The log says which.
+`public` has to be written out: an empty token (a missing or misnamed secret) is never taken as the public check, and fails. The job also fails, and the log says why, when the public check is busy (it is rate-limited — try again in a few minutes) or can't read the link publicly (a private repository — use a token).
 
-Each tokenless run ends with one line on what an Enni space adds — private repos, and checks that learn your team — and where to [get started](https://enni.vibana.com/get-started?ref=action).
+Each public-mode run ends with one line on what an Enni space adds — private repos, and checks that learn your team — and where to [get started](https://enni.vibana.com/get-started?ref=action).
 
 ## With an Enni space
 
@@ -67,7 +68,7 @@ No Enni account yet? [Get started](https://enni.vibana.com/get-started?ref=actio
 | Input | Required | Default | |
 |---|---|---|---|
 | `enni-url` | no | `https://enni.vibana.com` | The Enni origin to ask |
-| `token` | no | | A CI token (`check_readiness` only). Without one, the public check: public GitHub issues and pull requests |
+| `token` | yes | | A CI token (`check_readiness` only), or `public` for the public check: public GitHub issues and pull requests, no account |
 | `subject-url` | yes | | The link to judge |
 | `intent` | no | | `implement`, `review`, `deploy`, `approve` or `publish`. An unknown value is ignored, never refused |
 | `wait-ms` | no | `20000` | How long Enni waits for a running check, per attempt (max 25000). Token only |
@@ -80,11 +81,11 @@ Each run writes Enni's verdict to the job's summary page, with the three things 
 
 ## Outputs
 
-`ok` (`"true"` when ready), `verdict`, `brief-url`, and `receipt` — a signed receipt a later step can verify at `<enni-url>/api/gate/verify`. Without a token, `brief-url` and `receipt` are empty; when the public check is busy or can't read the link, every output is.
+`ok` (`"true"` when ready), `verdict`, `brief-url`, and `receipt` — a signed receipt a later step can verify at `<enni-url>/api/gate/verify`. With `token: public`, `brief-url` and `receipt` are empty; when the public check refuses (busy, or a link it can't read), every output is and the job fails.
 
 ## How it decides
 
-The job passes only when Enni's answer says `ok: true` (without a token: when the verdict is `ready`). **It never reads the HTTP status as the verdict**: a server error, a refusal, or a body without an answer fails the job — a problem on Enni's side is never a passing gate. Without a token there is one exception, said in the log as a warning: the public check being busy, or not able to read the link publicly, gives no answer at all, so the job neither passes the issue as ready nor fails it as not ready.
+The job passes only when Enni's answer says `ok: true` (with `token: public`: when the verdict is `ready`). **It never reads the HTTP status as the verdict**: a server error, a refusal, or a body without an answer fails the job — a problem on Enni's side is never a passing gate. That holds for the public check too: busy, or a link it can't read publicly, fails the job. An empty token fails as well; it never falls back to the public check.
 
 ## Releasing
 

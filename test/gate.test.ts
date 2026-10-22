@@ -179,7 +179,7 @@ describe("the job's summary page (Enni contract v9)", () => {
   });
 });
 
-describe("with no token: Enni's public check (enni-v2 #736)", () => {
+describe("with token: public — Enni's public check (enni-v2 #736)", () => {
   const PUBLIC_NOT_READY = {
     key: "https://github.com/acme/web/issues/7",
     verdict: "not-ready",
@@ -211,7 +211,7 @@ describe("with no token: Enni's public check (enni-v2 #736)", () => {
   }
   const subject = "https://github.com/acme/web/issues/7";
   const tokenless = (extra: Record<string, string> = {}) =>
-    runGate({ ENNI_TOKEN: "", ENNI_SUBJECT_URL: subject, ...extra });
+    runGate({ ENNI_TOKEN: "public", ENNI_SUBJECT_URL: subject, ...extra });
 
   test("one GET of the public check, no credential, the verdict mapped onto the outputs", async () => {
     const seen = servePublic({ body: { ...PUBLIC_NOT_READY, verdict: "ready" } });
@@ -254,26 +254,52 @@ describe("with no token: Enni's public check (enni-v2 #736)", () => {
     expect(seen[0]?.url.searchParams.has("intent")).toBe(false);
   });
 
-  test("busy: says so, writes no verdict, and does not fail the job", async () => {
+  test("busy fails the job, says so, and writes no verdict", async () => {
     servePublic(problem(429, "rate_limited", "A lot of people are checking right now."));
     const { code, outputs, log } = await tokenless();
-    expect(code).toBe(0);
+    expect(code).toBe(1);
     expect(outputs).not.toContain("ok=");
-    expect(log).toContain("A lot of people are checking right now.");
+    expect(log).toContain("::error::Enni's public check is busy");
+    expect(log).toContain("try again in a few minutes");
     expect(log).toContain("/get-started?ref=action");
   });
 
-  test("private or not found: says so and does not fail the job", async () => {
+  test("private or not found fails the job, and points to a token", async () => {
     for (const [status, code] of [
       [403, "forbidden"],
       [404, "not_found"],
     ] as const) {
       servePublic(problem(status, code, "That repository is private."));
       const run = await tokenless();
-      expect(run.code).toBe(0);
-      expect(run.log).toContain("That repository is private.");
+      expect(run.code).toBe(1);
+      expect(run.outputs).not.toContain("ok=");
+      expect(run.log).toContain("::error::");
+      expect(run.log).toContain("isn't a public issue or pull request");
+      expect(run.log).toContain("use a token");
+      expect(run.log).toContain("/get-started?ref=action");
       server?.stop(true);
     }
+  });
+
+  test("an empty token (a missing secret) is never the public check: it asks MCP, and fails", async () => {
+    const seen: { method: string; path: string; auth: string | null }[] = [];
+    server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        const url = new URL(request.url);
+        seen.push({ method: request.method, path: url.pathname, auth: request.headers.get("authorization") });
+        if (url.pathname === "/api/public/check") return Response.json({ ...PUBLIC_NOT_READY, verdict: "ready" });
+        return Response.json(
+          { jsonrpc: "2.0", id: 1, error: { code: -32001, message: "Unauthorized" } },
+          { status: 401 },
+        );
+      },
+    });
+    const { code, log } = await runGate({ ENNI_TOKEN: "", ENNI_SUBJECT_URL: subject });
+    expect(code).toBe(1);
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((s) => s.method === "POST" && s.path === "/api/mcp")).toBe(true);
+    expect(log).not.toContain("/get-started?ref=action");
   });
 
   test("a link it cannot read, or a server problem, still fails", async () => {
