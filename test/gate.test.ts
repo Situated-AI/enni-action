@@ -178,3 +178,128 @@ describe("the job's summary page (Enni contract v9)", () => {
     expect(md).not.toContain("What to change first");
   });
 });
+
+describe("with no token: Enni's public check (enni-v2 #736)", () => {
+  const PUBLIC_NOT_READY = {
+    key: "https://github.com/acme/web/issues/7",
+    verdict: "not-ready",
+    checks: [],
+    caveats: [],
+    answer: {
+      state: "answer",
+      sentence: "4 of 14 checks passed.",
+      why: [{ text: "It is closed as done.", recommendation: "Reopen it first." }, { text: "No done-check." }],
+      rewrite: { markdown: "## Acceptance criteria\n- [ ] x" },
+    },
+  };
+  const problem = (status: number, code: string, detail: string): Reply => ({
+    status,
+    body: { type: "about:blank", title: "t", status, detail, code },
+  });
+
+  /** Serve `reply` to every GET, and record each request's path and query. */
+  function servePublic(reply: Reply) {
+    const seen: { url: URL; auth: string | null }[] = [];
+    server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        seen.push({ url: new URL(request.url), auth: request.headers.get("authorization") });
+        return Response.json(reply.body, { status: reply.status ?? 200 });
+      },
+    });
+    return seen;
+  }
+  const subject = "https://github.com/acme/web/issues/7";
+  const tokenless = (extra: Record<string, string> = {}) =>
+    runGate({ ENNI_TOKEN: "", ENNI_SUBJECT_URL: subject, ...extra });
+
+  test("one GET of the public check, no credential, the verdict mapped onto the outputs", async () => {
+    const seen = servePublic({ body: { ...PUBLIC_NOT_READY, verdict: "ready" } });
+    const { code, outputs, log } = await tokenless();
+    expect(code).toBe(0);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.auth).toBeNull();
+    expect(seen[0]?.url.pathname).toBe("/api/public/check");
+    expect(seen[0]?.url.searchParams.get("url")).toBe(subject);
+    expect(seen[0]?.url.searchParams.get("intent")).toBe("deploy");
+    expect(outputs).toContain("ok=true");
+    expect(outputs).toContain("verdict=ready");
+    expect(log).toContain("/get-started?ref=action");
+  });
+
+  test("a verdict short of ready fails the job, and the summary page has its why and rewrite", async () => {
+    servePublic({ body: PUBLIC_NOT_READY });
+    const file = join(mkdtempSync(join(tmpdir(), "gate-pub-")), "summary.md");
+    const { code, outputs } = await tokenless({ GITHUB_STEP_SUMMARY: file });
+    expect(code).toBe(1);
+    expect(outputs).toContain("ok=false");
+    const md = readFileSync(file, "utf8");
+    expect(md).toContain("## Enni: not-ready");
+    expect(md).toContain("1. Reopen it first.");
+    expect(md).toContain("2. No done-check.");
+    expect(md).toContain("## Acceptance criteria");
+    expect(md).toContain("/get-started?ref=action");
+  });
+
+  test("ready-with-caveats is not ok, as with a token", async () => {
+    servePublic({ body: { ...PUBLIC_NOT_READY, verdict: "ready-with-caveats" } });
+    const { code, outputs } = await tokenless({ ENNI_FAIL_ON_NOT_READY: "false" });
+    expect(code).toBe(0);
+    expect(outputs).toContain("ok=false");
+  });
+
+  test("an unknown intent is left out, never sent to be refused", async () => {
+    const seen = servePublic({ body: PUBLIC_NOT_READY });
+    await tokenless({ ENNI_INTENT: "ship-it", ENNI_FAIL_ON_NOT_READY: "false" });
+    expect(seen[0]?.url.searchParams.has("intent")).toBe(false);
+  });
+
+  test("busy: says so, writes no verdict, and does not fail the job", async () => {
+    servePublic(problem(429, "rate_limited", "A lot of people are checking right now."));
+    const { code, outputs, log } = await tokenless();
+    expect(code).toBe(0);
+    expect(outputs).not.toContain("ok=");
+    expect(log).toContain("A lot of people are checking right now.");
+    expect(log).toContain("/get-started?ref=action");
+  });
+
+  test("private or not found: says so and does not fail the job", async () => {
+    for (const [status, code] of [
+      [403, "forbidden"],
+      [404, "not_found"],
+    ] as const) {
+      servePublic(problem(status, code, "That repository is private."));
+      const run = await tokenless();
+      expect(run.code).toBe(0);
+      expect(run.log).toContain("That repository is private.");
+      server?.stop(true);
+    }
+  });
+
+  test("a link it cannot read, or a server problem, still fails", async () => {
+    servePublic(problem(400, "invalid_request", "That isn't a link to a GitHub issue."));
+    const refused = await tokenless();
+    expect(refused.code).toBe(1);
+    expect(refused.log).toContain("That isn't a link to a GitHub issue.");
+    server?.stop(true);
+    servePublic({ status: 500, body: { ok: true, verdict: undefined } });
+    expect((await tokenless()).code).toBe(1);
+  });
+
+  test("follows the 308 to the canonical query", async () => {
+    let hops = 0;
+    server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        hops++;
+        const url = new URL(request.url);
+        if (!url.searchParams.has("canonical")) {
+          return new Response(null, { status: 308, headers: { location: `${url.pathname}?canonical=1` } });
+        }
+        return Response.json({ ...PUBLIC_NOT_READY, verdict: "ready" });
+      },
+    });
+    expect((await tokenless()).code).toBe(0);
+    expect(hops).toBe(2);
+  });
+});

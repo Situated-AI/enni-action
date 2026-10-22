@@ -6,6 +6,9 @@
 # that treated the HTTP status as the verdict would report a server problem as a passing gate the
 # day that changed. The verdict is `ok` in the body. A body with no answer in it is a failure,
 # whatever the status code says.
+#
+# With no token, the gate asks Enni's public check instead: one GET, no account, public GitHub
+# issues and pull requests only, the rules' answer (no pending, so no loop). See `public_check`.
 set -uo pipefail
 
 url="${ENNI_URL%/}/api/mcp"
@@ -36,7 +39,7 @@ write_summary() {
     "## Enni: \(.verdict // "no verdict")\n\n\(.summary // "" | plain)\n",
     (if ((.answer.why // []) | length) > 0 then
       "### What to change first\n",
-      ((.answer.why // [])[:3] | to_entries[] | "\(.key + 1). \((.value.recommendation // .value.reason // "") | plain)"),
+      ((.answer.why // [])[:3] | to_entries[] | "\(.key + 1). \((.value.recommendation // .value.reason // .value.text // "") | plain)"),
       "" else empty end),
     (if .answer.rewrite.markdown then
       "<details><summary>Suggested rewrite (paste into the issue)</summary>\n\n```markdown\n\(.answer.rewrite.markdown | plain)\n```\n</details>\n"
@@ -44,6 +47,71 @@ write_summary() {
     (if .brief_url then "[The full answer](\(.brief_url))" else empty end)
   ' <<<"$1" >>"$GITHUB_STEP_SUMMARY" 2>/dev/null || true
 }
+
+# Value first: what an account adds, and where to get one. Printed on every tokenless run.
+upgrade_line() {
+  local line="Checked without an account: the public rules only. With an Enni space it also checks private repos and learns your team: ${ENNI_URL%/}/get-started?ref=action"
+  echo "$line"
+  [[ -z "${GITHUB_STEP_SUMMARY:-}" ]] || printf '\n%s\n' "$line" >>"$GITHUB_STEP_SUMMARY"
+}
+
+# The tokenless path: `GET /api/public/check` (the same rubric, public GitHub only, nothing stored).
+# Its answer has no `ok`; it is `verdict == "ready"`, exactly as Enni derives `ok` for a token.
+# A refusal is problem+json with a `code`. Enni being busy, or the item not being public, is not
+# an answer about the item: the job says so and does not fail as "not ready". Anything else — a
+# link Enni cannot read, a server problem, a body with no answer — fails, as on the token path.
+public_check() {
+  local query=(--data-urlencode "url=$ENNI_SUBJECT_URL")
+  # The public check refuses an unknown intent; the action promises to ignore one.
+  case "${ENNI_INTENT:-}" in
+    implement | review | deploy | approve | publish) query+=(--data-urlencode "intent=$ENNI_INTENT") ;;
+  esac
+  local body
+  # -L: Enni answers a link in any spelling but its own with a 308 to the canonical one.
+  body="$(curl -sS -L --get "${ENNI_URL%/}/api/public/check" "${query[@]}" \
+    -H "user-agent: enni-gate-action/1")" || { echo "::error::Enni did not answer."; exit 1; }
+  local verdict
+  verdict="$(jq -r '.verdict // empty' <<<"$body" 2>/dev/null)"
+  if [[ -z "$verdict" ]]; then
+    local code detail
+    code="$(jq -r '.code // empty' <<<"$body" 2>/dev/null)"
+    detail="$(jq -r '.detail // empty' <<<"$body" 2>/dev/null)"
+    case "$code" in
+      rate_limited)
+        echo "::warning::Enni's public check is busy, so this run has no answer: ${detail:-try again in a few minutes}. Not failing the job for it."
+        upgrade_line
+        exit 0
+        ;;
+      forbidden | not_found)
+        # GitHub shows a private repository to a stranger as not found, so both mean the same here.
+        echo "::warning::Enni's public check can't read that link: ${detail:-it is not a public issue or pull request}. Not failing the job for it; a token checks private repos."
+        upgrade_line
+        exit 0
+        ;;
+    esac
+    echo "::error::Enni refused: ${detail:-$body}"
+    exit 1
+  fi
+  local ok summary
+  ok="$([[ "$verdict" == "ready" ]] && echo true || echo false)"
+  summary="$(jq -r '.answer.sentence // ""' <<<"$body")"
+  {
+    echo "ok=$ok"
+    echo "verdict=$verdict"
+    echo "brief-url="
+    echo "receipt="
+  } >>"$out"
+  echo "Enni: $verdict — $summary"
+  write_summary "$(jq -c '{verdict, summary: .answer.sentence, answer}' <<<"$body")"
+  upgrade_line
+  if [[ "$ok" != "true" && "${ENNI_FAIL_ON_NOT_READY:-true}" == "true" ]]; then
+    echo "::error::Not ready: $(jq -r '[.answer.why[]?.text][0] // .answer.sentence // ""' <<<"$body")"
+    exit 1
+  fi
+  exit 0
+}
+
+[[ -n "${ENNI_TOKEN:-}" ]] || public_check
 
 for ((attempt = 1; attempt <= attempts; attempt++)); do
   body="$(ask)" || { echo "::error::Enni did not answer (attempt $attempt)."; exit 1; }

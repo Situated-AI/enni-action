@@ -2,7 +2,34 @@
 
 Ask [Enni](https://enni.vibana.com) whether a ticket, change or document is ready — and fail the job unless it is.
 
-Check every pull request before review. Save this as `.github/workflows/enni.yml`:
+## Try it on a public repo — no account
+
+Check every issue as it is opened or edited. Save this as `.github/workflows/enni.yml`:
+
+```yaml
+name: Enni readiness
+on:
+  issues:
+    types: [opened, edited, reopened]
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: situated-ai/enni-action@v1
+        with:
+          subject-url: ${{ github.event.issue.html_url }}
+          intent: implement
+```
+
+No token, no signup: without one the action asks Enni's public check, which runs the same rules over any public GitHub issue or pull request and stores nothing. The job fails until the issue is ready, and its summary page shows what to change first. **Read-only:** it never comments, labels or merges.
+
+Two answers are not about the issue, so they never fail the job: the public check being busy (it is rate-limited — try again in a few minutes), and a link it can't read publicly (a private repository). The log says which.
+
+Each tokenless run ends with one line on what an Enni space adds — private repos, and checks that learn your team — and where to [get started](https://enni.vibana.com/get-started?ref=action).
+
+## With an Enni space
+
+A token checks private repos too, through everything your space knows. Check every pull request before review:
 
 ```yaml
 name: Enni readiness
@@ -20,11 +47,11 @@ jobs:
           intent: review
 ```
 
-The job fails until Enni says the work behind the pull request is ready, so reviewers see the gap before they read the diff. **Read-only:** it never comments, labels or merges. Free while Enni is in beta, and a free tier stays after.
+The job fails until Enni says the work behind the pull request is ready, so reviewers see the gap before they read the diff. Free while Enni is in beta, and a free tier stays after.
 
-No Enni account yet? [Create one](https://enni.vibana.com/sign-up?ref=action), then follow Setup.
+No Enni account yet? [Get started](https://enni.vibana.com/get-started?ref=action), then follow Setup.
 
-## Setup
+### Setup
 
 1. **Make a CI token in Enni** (an admin of your space):
    1. In the sidebar, under **Settings**, open **Let a tool ask Enni**.
@@ -40,11 +67,11 @@ No Enni account yet? [Create one](https://enni.vibana.com/sign-up?ref=action), t
 | Input | Required | Default | |
 |---|---|---|---|
 | `enni-url` | no | `https://enni.vibana.com` | The Enni origin to ask |
-| `token` | yes | | A CI token (`check_readiness` only) |
+| `token` | no | | A CI token (`check_readiness` only). Without one, the public check: public GitHub issues and pull requests |
 | `subject-url` | yes | | The link to judge |
 | `intent` | no | | `implement`, `review`, `deploy`, `approve` or `publish`. An unknown value is ignored, never refused |
-| `wait-ms` | no | `20000` | How long Enni waits for a running check, per attempt (max 25000) |
-| `attempts` | no | `6` | How many times to ask. Asking again joins the same check — it never starts a second |
+| `wait-ms` | no | `20000` | How long Enni waits for a running check, per attempt (max 25000). Token only |
+| `attempts` | no | `6` | How many times to ask. Asking again joins the same check — it never starts a second. Token only: the public check answers at once |
 | `fail-on-not-ready` | no | `true` | Set `false` to report without failing |
 
 ## The job's summary
@@ -53,11 +80,11 @@ Each run writes Enni's verdict to the job's summary page, with the three things 
 
 ## Outputs
 
-`ok` (`"true"` when ready), `verdict`, `brief-url`, and `receipt` — a signed receipt a later step can verify at `<enni-url>/api/gate/verify`.
+`ok` (`"true"` when ready), `verdict`, `brief-url`, and `receipt` — a signed receipt a later step can verify at `<enni-url>/api/gate/verify`. Without a token, `brief-url` and `receipt` are empty; when the public check is busy or can't read the link, every output is.
 
 ## How it decides
 
-The job passes only when Enni's answer says `ok: true`. **It never reads the HTTP status as the verdict**: a server error, a refusal, or a body without an answer fails the job — a problem on Enni's side is never a passing gate.
+The job passes only when Enni's answer says `ok: true` (without a token: when the verdict is `ready`). **It never reads the HTTP status as the verdict**: a server error, a refusal, or a body without an answer fails the job — a problem on Enni's side is never a passing gate. Without a token there is one exception, said in the log as a warning: the public check being busy, or not able to read the link publicly, gives no answer at all, so the job neither passes the issue as ready nor fails it as not ready.
 
 ## Releasing
 
