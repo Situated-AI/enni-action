@@ -8,7 +8,7 @@ inputs:
     required: false
     default: https://enni.vibana.com
   token:
-    description: A CI token an admin made in Enni (check_readiness only). Store it as a secret.
+    description: 'A CI token an admin made in Enni (check_readiness only), stored as a secret — or "public" to use Enni''s public check: public GitHub issues and pull requests, no account. An empty token fails.'
     required: true
   subject-url:
     description: The link to judge — a ticket, a change, a document.
@@ -37,10 +37,10 @@ outputs:
     description: Enni's verdict.
     value: ${{ steps.gate.outputs.verdict }}
   brief-url:
-    description: Where the brief behind the verdict lives.
+    description: "Where the brief behind the verdict lives. Empty with `token: public`."
     value: ${{ steps.gate.outputs.brief-url }}
   receipt:
-    description: The signed receipt a later step can verify at /api/gate/verify.
+    description: "The signed receipt a later step can verify at /api/gate/verify. Empty with `token: public`."
     value: ${{ steps.gate.outputs.receipt }}
 runs:
   using: composite
